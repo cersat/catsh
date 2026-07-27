@@ -215,7 +215,7 @@ def cmd_rem(args):
     
 def cmd_mdir(args):
     if not args:
-        print("Usage: mkdir <folder>")
+        print("Usage: mdir <folder>")
         return
     presolve(args[0]).mkdir(exist_ok=True)
         
@@ -337,10 +337,10 @@ def cmd_update(args):
         print("catsh is up-to-date")
         
 def cmd_set(args):
-    if not args:
+    if not args or not '=' in args:
         print('Usage: set "var=value"')
         return
-    var, value = args[0].split('=')
+    var, value = args[0].split('=', 1)
     variables[var] = value
         
 # commands end
