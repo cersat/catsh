@@ -291,17 +291,14 @@ def cmd_cls(args):
         
 def cmd_update(args):
     url = "https://raw.githubusercontent.com/cersat/catsh/main/catsh.py"
-    response = requests.get(url, timeout=10)
+    response = requests.get(url)
     data = response.text
     dbgprint("downloaded file")
     with open("catsh_.py", "w") as f:
         f.write(data)
-    dbgprint("running file")
-    result = subprocess.run(["python", "catsh_.py", "--ver"], capture_output=True, text=True)
-    itver = float(result.stdout[7:])
-    myver = float(catver[7:])
-    if itver > myver: 
-        Path("catsh_.py").replace(Path(__file__))
+    result = subprocess.run(["python", "catsh_.py", "--ver"], capture_output=True, text=True, shell=True)
+    result = result[7:]
+    print(result)
         
 # commands end
     
@@ -373,7 +370,7 @@ def rscript():
 def main():
     global keep_cycle
     if showver:
-        print(catver, end='')
+        print(catver)
         return
     load_aliases()
     dbgprint("Debug prints are turned on")
@@ -390,11 +387,9 @@ def main():
             except EOFError:
                 print("exiting catsh")
                 keep_cycle = False
-                continue
             except KeyboardInterrupt:
                 print("exiting catsh")
                 keep_cycle = False
-                continue
         runcmd(cmd)
 
 if __name__ == "__main__":
