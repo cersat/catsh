@@ -3,8 +3,9 @@ import os
 import sys
 import shutil
 import json
-import requests
+import urllib.request
 import subprocess
+from datetime import datetime
 
 variables = {}
 scr_args = sys.argv[1:]
@@ -27,7 +28,7 @@ except ValueError:
 keep_cycle  = True
 script_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.05"
+catver = "Catsh V0.06"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -61,8 +62,20 @@ def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, count=0):
             break
     return count
     
+def update_constants():
+    now = datetime.now()
+    variables["cwd"]    = current_dir
+    variables["year"]   = now.strftime("%Y")
+    variables["month"]  = now.strftime("%m")
+    variables["day"]    = now.strftime("%d")
+    variables["hour"]   = now.strftime("%H")
+    variables["minute"] = now.strftime("%M")
+    variables["second"] = now.strftime("%S")
+    variables["input"]  = '' # placeholder
+    
 def parse_vars(line):
     global variables
+    update_constants()
     out_line = ''
     var_line = ''
     is_var = False
@@ -74,7 +87,11 @@ def parse_vars(line):
                 out_line += i
             else:
                 if is_var:
-                    if var_line in variables.keys():
+                    if var_line == "input":
+                        variables["input"] = input()
+                        out_line += variables[var_line]
+                        var_line = ''
+                    elif var_line in variables.keys():
                         out_line += variables[var_line]
                         var_line = ''
                     else:
@@ -320,8 +337,8 @@ def cmd_cls(args):
         
 def cmd_update(args):
     url = "https://raw.githubusercontent.com/cersat/catsh/main/catsh.py"
-    response = requests.get(url, timeout=10)
-    data = response.text
+    with urllib.request.urlopen(url, timeout=10) as response:
+        data = response.read().decode("utf-8")
     dbgprint("downloaded file")
     with open("catsh_.py", "w") as f:
         f.write(data)
@@ -337,7 +354,7 @@ def cmd_update(args):
         print("catsh is up-to-date")
         
 def cmd_set(args):
-    if not args or not '=' in args:
+    if not args or '=' not in args[0]:
         print('Usage: set "var=value"')
         return
     var, value = args[0].split('=', 1)
