@@ -7,7 +7,12 @@ import json
 scr_args = sys.argv[1:]
 debug   = "--debug" in scr_args
 fullerr = "--fullerr" in scr_args
-catsh_dir = os.path.join(os.environ["APPDATA"], "Catsh")
+if os.name == 'nt':
+    appdata = os.environ.get("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
+    catsh_dir = os.path.join(appdata, "Catsh")
+else:
+    config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    catsh_dir = os.path.join(config_home, "Catsh")
 aliases_path = os.path.join(catsh_dir, "aliases.json")
 os.makedirs(catsh_dir, exist_ok=True)
 try:
