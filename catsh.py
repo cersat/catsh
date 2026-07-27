@@ -6,6 +6,7 @@ import json
 import requests
 import subprocess
 
+variables = {}
 scr_args = sys.argv[1:]
 debug   = "--debug"   in scr_args
 fullerr = "--fullerr" in scr_args
@@ -60,7 +61,35 @@ def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, count=0):
             break
     return count
     
+def parse_vars(line):
+    global variables
+    out_line = ''
+    var_line = ''
+    is_var = False
+    prev = ''
+    for i in line:
+        if i == '%':
+            if prev == '^':
+                out_line = out_line[:-1]
+                out_line += i
+            else:
+                if is_var:
+                    if var_line in variables.keys():
+                        out_line += variables[var_line]
+                        var_line = ''
+                    else:
+                        out_line += '%' + var_line + '%'
+                        var_line = ''
+                is_var = not is_var
+        elif is_var:
+            var_line += i
+        else:
+            out_line += i
+        prev = i
+    return out_line
+    
 def split_args(line):
+    line = parse_vars(line)
     args = []
     current = ""
     in_quotes = False
@@ -307,6 +336,13 @@ def cmd_update(args):
         os.remove("catsh_.py")
         print("catsh is up-to-date")
         
+def cmd_set(args):
+    if not args:
+        print('Usage: set "var=value"')
+        return
+    var, value = args[0].split('=')
+    variables[var] = value
+        
 # commands end
     
 commands = {
@@ -326,6 +362,7 @@ commands = {
     "help"  : cmd_help,
     "cls"   : cmd_cls,
     "update": cmd_update,
+    "set"   : cmd_set,
 }
 
 # R.I.P "nothing\" folder
