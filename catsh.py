@@ -3,11 +3,15 @@ import os
 import sys
 import shutil
 import json
+import requests
+import subprocess
 
 scr_args = sys.argv[1:]
-debug   = "--debug" in scr_args
+debug   = "--debug"   in scr_args
 fullerr = "--fullerr" in scr_args
-if os.name == 'nt':
+showver = "--ver"     in scr_args
+osname = os.name
+if osname == 'nt':
     appdata = os.environ.get("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
     catsh_dir = os.path.join(appdata, "Catsh")
 else:
@@ -280,7 +284,21 @@ def cmd_help(args):
         print(i)
       
 def cmd_cls(args):
-    os.system('cls')
+    if osname == 'nt':
+        os.system('cls')
+    else:
+        os.system('clear')
+        
+def cmd_update(args):
+    url = "https://raw.githubusercontent.com/cersat/catsh/main/catsh.py"
+    response = requests.get(url)
+    data = response.text
+    dbgprint("downloaded file")
+    with open("catsh_.py", "w") as f:
+        f.write(data)
+    result = subprocess.run(["python", "catsh_.py", "--ver"], capture_output=True, text=True, shell=True)
+    result = result[7:]
+    print(result)
         
 # commands end
     
@@ -300,6 +318,7 @@ commands = {
     "cmddef": cmd_cmddef,
     "help"  : cmd_help,
     "cls"   : cmd_cls,
+    "update": cmd_update,
 }
 
 # R.I.P "nothing\" folder
@@ -315,14 +334,14 @@ def runcmd(cmd):
         if callable(action):
             action(args)
         elif isinstance(action, str):
-            runcmd(action)
+            runcmd(action + " " + " ".join(args))
     else:
         try:
             action = commands[command]
             if callable(action):
                 action(args)
             elif isinstance(action, str):
-                runcmd(action)
+                runcmd(action + " " + " ".join(args))
         except KeyError:
             errprint(3, "invalid command")
         except RecursionError:
@@ -350,6 +369,9 @@ def rscript():
 
 def main():
     global keep_cycle
+    if showver:
+        print(catver)
+        return
     load_aliases()
     dbgprint("Debug prints are turned on")
     print(catver)
