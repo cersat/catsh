@@ -302,6 +302,8 @@ def cmd_update(args):
     myver = float(catver[7:])
     if itver > myver: 
         Path("catsh_.py").replace(Path(__file__))
+    else:
+        os.remove("catsh_.py")
         
 # commands end
     
