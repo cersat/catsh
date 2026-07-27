@@ -363,7 +363,8 @@ def main():
             try:
                 cmd = input(current_dir + ">")
             except EOFError:
-                continue
+                print("exiting catsh")
+                keep_cycle = False
             except KeyboardInterrupt:
                 print("exiting catsh")
                 keep_cycle = False
