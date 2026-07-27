@@ -26,7 +26,7 @@ except ValueError:
 keep_cycle  = True
 script_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.04"
+catver = "Catsh V0.05"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -302,8 +302,10 @@ def cmd_update(args):
     myver = float(catver[7:])
     if itver > myver: 
         Path("catsh_.py").replace(Path(__file__))
+        print("updated catsh to", itver)
     else:
         os.remove("catsh_.py")
+        print("catsh is up-to-date")
         
 # commands end
     
