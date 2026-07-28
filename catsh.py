@@ -4,9 +4,14 @@ import sys
 import shutil
 import json
 import urllib.request
+from urllib.parse import quote
 import subprocess
 from datetime import datetime
+import threading
+import queue
+import time
 
+q = queue.Queue()
 variables = {}
 scr_args = sys.argv[1:]
 debug   = "--debug"   in scr_args
@@ -28,7 +33,7 @@ except ValueError:
 keep_cycle  = True
 script_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.10"
+catver = "Catsh V0.11"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -137,6 +142,37 @@ def save_aliases():
                if isinstance(body, str)}
     with open(aliases_path, "w", encoding="utf-8") as f:
         json.dump(aliases, f, ensure_ascii=False, indent=2)
+
+def input_thread(nickname):
+    while True:
+        try:
+            line = input(nickname + ':')
+            q.put(line)
+        except Exception:
+            q.put('EXIT')
+            break
+        
+def net_thread(room, nickname):
+    own_prefix = nickname + ": "
+    response = urllib.request.urlopen(f"https://ntfy.sh/{room}/json")
+    for line in response:
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("event") != "message":
+            continue
+        message = event.get("message", "")
+        if message == "__ping__":
+            urllib.request.urlopen("https://ntfy.sh/" + room, data=b"__pong__")
+        elif message == "__pong__":
+            continue
+        elif message.startswith(own_prefix):
+            continue
+        else:
+            print(message)
         
 # commands
 
@@ -209,7 +245,7 @@ def cmd_catsee(args):
             print_dir(folder_path, use_a, use_d, use_f, use_z, use_s, use_r, use_e)
         except PermissionError:
             if not use_e:
-                errprint(1, folder_path, "is inaccessible")
+                errprint(2, folder_path, "is inaccessible")
 
 def cmd_echo(args):
     for arg in args:
@@ -347,8 +383,8 @@ def cmd_cmddef(args):
         else:
             errprint(2, "no such alias")
     else: #if len(args) > 1:
-        if args[0] == args[1]:
-            print("cannot create recursive command")
+        if args[1].startswith(args[0]):
+            errprint(2, "cannot create recursive command")
         else:
             commands[args[0]] = args[1]
             save_aliases()
@@ -366,21 +402,24 @@ def cmd_cls(args):
         
 def cmd_update(args):
     url = "https://raw.githubusercontent.com/cersat/catsh/main/catsh.py"
-    with urllib.request.urlopen(url, timeout=10) as response:
-        data = response.read().decode("utf-8")
-    dbgprint("downloaded file")
-    with open("catsh_.py", "w") as f:
-        f.write(data)
-    dbgprint("running file")
-    result = subprocess.run(["python", "catsh_.py", "--ver"], capture_output=True, text=True)
-    itver = float(result.stdout[7:])
-    myver = float(catver[7:])
-    if itver > myver: 
-        Path("catsh_.py").replace(Path(__file__))
-        print("updated catsh to", itver)
-    else:
-        os.remove("catsh_.py")
-        print("catsh is up-to-date")
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            data = response.read().decode("utf-8")
+        dbgprint("downloaded file")
+        with open("catsh_.py", "w") as f:
+            f.write(data)
+        dbgprint("running file")
+        result = subprocess.run(["python3", "catsh_.py", "--ver"], capture_output=True, text=True)
+        itver = float(result.stdout[7:])
+        myver = float(catver[7:])
+        if itver > myver: 
+            Path("catsh_.py").replace(Path(__file__))
+            print("updated catsh to", itver)
+        else:
+            os.remove("catsh_.py")
+            print("catsh is up-to-date")
+    except urllib.error.URLError:
+        errprint(2, "no internet connection")
         
 def cmd_set(args):
     if not args or '=' not in args[0]:
@@ -404,8 +443,44 @@ def cmd_touch(args):
             print(file, "already exists")
         presolve(file).touch()
         
+def cmd_bridge(args):
+    if len(args) < 2:
+        print("NetBridge V1.01")
+        print("Usage: bridge <room id> <nickname>")
+        return
+    room = quote(args[0], safe='')
+    nickname = args[1]
+
+    urllib.request.urlopen("https://ntfy.sh/" + room, data=b"__ping__")
+    time.sleep(1.5)
+    response = urllib.request.urlopen(f"https://ntfy.sh/{room}/json?poll=1&since=all")
+    is_admin = True
+    for line in response:
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("event") == "message" and event.get("message") == "__pong__":
+            is_admin = False
+
+    if is_admin:
+        urllib.request.urlopen("https://ntfy.sh/" + room, data=b"room opened")
+    else:
+        urllib.request.urlopen("https://ntfy.sh/" + room, data=(nickname + " connected").encode())
+
+    threading.Thread(target=input_thread, args=(nickname, ), daemon=True).start()
+    threading.Thread(target=net_thread, args=(room, nickname), daemon=True).start()
+
+    line = ''
+    while line != 'EXIT':
+        try:
+            line = q.get(timeout=1)
+            if line != 'EXIT':
+                urllib.request.urlopen("https://ntfy.sh/" + room, data=(nickname + ": " + line).encode())
+        except queue.Empty:
+            pass
+
 # commands end
-    
+
 commands = {
     "ver"   : cmd_ver,
     "quit"  : cmd_quit,
@@ -426,14 +501,15 @@ commands = {
     "set"   : cmd_set,
     "env"   : cmd_env,
     "touch" : cmd_touch,
+    "bridge": cmd_bridge,
 }
 
 # R.I.P "nothing\" folder
 def runcmd(cmd):
     global keep_cycle
-    if not cmd:
-        return
     cmd_args = split_args(cmd)
+    if not cmd_args:
+        return
     args = cmd_args[1:]
     command = cmd_args[0]
     if fullerr:
@@ -452,11 +528,13 @@ def runcmd(cmd):
         except KeyError:
             errprint(3, "invalid command:", command)
         except RecursionError:
-            errprint(2, "recursive command")
+            errprint(3, "recursive command")
         except KeyboardInterrupt:
             pass
+        except OSError as e:
+            errprint(3, "file system error:", e.strerror)
         except Exception as e:
-            errprint(3, "unknown error:", e)
+            errprint(3, "unknown error of", type(e).__name__ + ':', str(e))
 
 def rscript():
     dbgprint("Running", script)
