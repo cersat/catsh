@@ -28,7 +28,7 @@ except ValueError:
 keep_cycle  = True
 script_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.06"
+catver = "Catsh V0.07"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -303,17 +303,23 @@ def cmd_cmddef(args):
     help   = "/?" in args
     delete = "/d" in args
     check  = "/c" in args
+    list   = "/l" in args
     global commands
-    if (len(args) < 2 and not check) or help:
+    if (len(args) < 2 and not check and not list) or help:
         print("CATSH cmddef V1.01")
-        print("Usage: cmddef [/? /d /c]<command> <code>")
+        print("Usage: cmddef [/? /d /c /l]<command> <code>")
         print("/? - this help message")
         print("/d - delete alias")
         print("/c - find another cmddef installed")
+        print("/l - list aliases")
         return
     elif delete:
         del commands[args[1]]
         save_aliases()
+    elif list:
+        for command, func in commands.items():
+            if isinstance(func, str):
+                print(command)
     elif check:
         print("CATSH cmddef v1.01 -- this program")
         if Path("C:/Program files/cmddef/").is_dir():
@@ -359,6 +365,11 @@ def cmd_set(args):
         return
     var, value = args[0].split('=', 1)
     variables[var] = value
+    
+def cmd_env(args):
+    global variables
+    for k, v in variables.items():
+        print(k, '=', v, sep='')
         
 # commands end
     
@@ -380,6 +391,7 @@ commands = {
     "cls"   : cmd_cls,
     "update": cmd_update,
     "set"   : cmd_set,
+    "env"   : cmd_env,
 }
 
 # R.I.P "nothing\" folder
@@ -404,7 +416,7 @@ def runcmd(cmd):
             elif isinstance(action, str):
                 runcmd(action + " " + " ".join(args))
         except KeyError:
-            errprint(3, "invalid command")
+            errprint(3, "invalid command:", command)
         except RecursionError:
             errprint(2, "recursive command")
         except KeyboardInterrupt:
@@ -430,6 +442,8 @@ def rscript():
 
 def main():
     global keep_cycle
+    global variables
+    variables["prompt"] = "%cwd%>"
     if showver:
         print(catver, end='')
         return
@@ -441,10 +455,10 @@ def main():
         return
     while keep_cycle:
         if fullerr:
-            cmd = input(current_dir + ">")
+            cmd = input(parse_vars(variables["prompt"]))
         else:
             try:
-                cmd = input(current_dir + ">")
+                cmd = input(parse_vars(variables["prompt"]))
             except EOFError:
                 print("exiting catsh")
                 keep_cycle = False
