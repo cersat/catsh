@@ -28,7 +28,7 @@ except ValueError:
 keep_cycle  = True
 script_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.07"
+catver = "Catsh V0.10"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -43,7 +43,7 @@ def presolve(arg):
         return p
     return Path(current_dir) / arg
     
-def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, count=0):
+def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, use_e, count=0):
     for item in folder.iterdir():
         if (item.is_file() and use_f) or (item.is_dir() and use_d) or (item.is_symlink() and use_z):
             if use_s in item.name:
@@ -52,12 +52,13 @@ def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, count=0):
                 
         if use_r and item.is_dir():
             if fullerr:
-                 count = print_dir(item, use_a, use_d, use_f, use_z, use_s, use_r, count)
+                 count = print_dir(item, use_a, use_d, use_f, use_z, use_s, use_r, use_e, count)
             else:
                 try:
-                    count = print_dir(item, use_a, use_d, use_f, use_z, use_s, use_r, count)
+                    count = print_dir(item, use_a, use_d, use_f, use_z, use_s, use_r, use_e, count)
                 except PermissionError:
-                    errprint(1, item.name, "is inaccessible")
+                    if not use_e:
+                        errprint(1, item.name, "is inaccessible")
         if count >= use_a:
             break
     return count
@@ -157,17 +158,20 @@ def cmd_type(args):
 
 def cmd_catsee(args):
     if not args:
-        print("Usage: catsee <folder> [-f -d -z -a N -s STR]")
+        print("Usage: catsee <folder> [-f -d -z -a N -s STR -r -e]")
         print("-f show files")
         print("-d show folders")
         print("-z show links")
         print("-a N show only first N files")
         print("-s STR search for STR")
+        print("-r show recursive")
+        print("-e ignore errors")
         return
     use_f = '-f' in args
     use_d = '-d' in args
     use_z = '-z' in args
     use_r = '-r' in args
+    use_e = '-e' in args
     try:
         if '-a' in args: 
             use_a = int(args[args.index('-a') + 1])
@@ -179,10 +183,12 @@ def cmd_catsee(args):
         else:
             use_s = ''
     except IndexError:
-        errprint(2, "-a and -s cannot appear at the end of the line.")
+        if not use_e:
+            errprint(2, "-a and -s cannot appear at the end of the line.")
         return
     except ValueError:
-        errprint(2, "there must be a number after -a.")
+        if not use_e:
+            errprint(2, "there must be a number after -a.")
         return
     
     if len(args) == 1:
@@ -197,12 +203,13 @@ def cmd_catsee(args):
         folder_path = presolve(args[0])
     
     if fullerr:
-        print_dir(folder_path, use_a, use_d, use_f, use_z, use_s, use_r)
+        print_dir(folder_path, use_a, use_d, use_f, use_z, use_s, use_r, use_e)
     else:
         try:
-            print_dir(folder_path, use_a, use_d, use_f, use_z, use_s, use_r)
+            print_dir(folder_path, use_a, use_d, use_f, use_z, use_s, use_r, use_e)
         except PermissionError:
-            errprint(1, folder_path, "is inaccessible")
+            if not use_e:
+                errprint(1, folder_path, "is inaccessible")
 
 def cmd_echo(args):
     for arg in args:
@@ -232,6 +239,7 @@ def cmd_rem(args):
     
 def cmd_mdir(args):
     if not args:
+        print("Creates folder")
         print("Usage: mdir <folder>")
         return
     presolve(args[0]).mkdir(exist_ok=True)
@@ -294,10 +302,16 @@ def cmd_copy(args):
 def cmd_run(args):
     global script
     if not args:
-        print("Usage: run <script>")
+        print("Usage: run <script> or run --out <filename.ext>")
         return
-    script = args[0]
-    rscript()
+    if args[0] == "--out":
+        if len(args) > 1:
+            os.system(args[1])
+        else:
+            errprint(2, "script for execution not received")
+    else:
+        script = args[0]
+        rscript()
     
 def cmd_cmddef(args):
     help   = "/?" in args
@@ -305,30 +319,39 @@ def cmd_cmddef(args):
     check  = "/c" in args
     list   = "/l" in args
     global commands
-    if (len(args) < 2 and not check and not list) or help:
-        print("CATSH cmddef V1.01")
+    if not args or help:
+        print("CATSH cmddef V1.02")
         print("Usage: cmddef [/? /d /c /l]<command> <code>")
         print("/? - this help message")
         print("/d - delete alias")
         print("/c - find another cmddef installed")
         print("/l - list aliases")
         return
-    elif delete:
-        del commands[args[1]]
-        save_aliases()
+    elif delete and len(args) > 1:
+        if args[1] in commands:
+            del commands[args[1]]
+            save_aliases()
+        else:
+            errprint(2, "no such alias")
     elif list:
         for command, func in commands.items():
             if isinstance(func, str):
                 print(command)
     elif check:
-        print("CATSH cmddef v1.01 -- this program")
+        print("CATSH cmddef v1.02 -- this program")
         if Path("C:/Program files/cmddef/").is_dir():
             print("BATCH cmddef in C:/program files/cmddef")
-    elif args[0] != args[1]:
-        commands[args[0]] = " ".join(args[1:])
-        save_aliases()
-    else:
-        print("cannot create recursive command")
+    elif len(args) == 1:
+        if args[0] in commands and isinstance(commands[args[0]], str):
+            print(commands[args[0]])
+        else:
+            errprint(2, "no such alias")
+    else: #if len(args) > 1:
+        if args[0] == args[1]:
+            print("cannot create recursive command")
+        else:
+            commands[args[0]] = args[1]
+            save_aliases()
         
 def cmd_help(args):
     global commands
@@ -371,6 +394,16 @@ def cmd_env(args):
     for k, v in variables.items():
         print(k, '=', v, sep='')
         
+def cmd_touch(args):
+    if not args:
+        print("Create files")
+        print("Usage: touch <file> <file> <file>...")
+        return
+    for file in args:
+        if os.path.exists(str(presolve(file))):
+            print(file, "already exists")
+        presolve(file).touch()
+        
 # commands end
     
 commands = {
@@ -392,6 +425,7 @@ commands = {
     "update": cmd_update,
     "set"   : cmd_set,
     "env"   : cmd_env,
+    "touch" : cmd_touch,
 }
 
 # R.I.P "nothing\" folder
@@ -420,8 +454,7 @@ def runcmd(cmd):
         except RecursionError:
             errprint(2, "recursive command")
         except KeyboardInterrupt:
-            print("exiting catsh")
-            keep_cycle = False
+            pass
         except Exception as e:
             errprint(3, "unknown error:", e)
 
@@ -461,8 +494,7 @@ def main():
                 cmd = input(parse_vars(variables["prompt"]))
             except EOFError:
                 print("exiting catsh")
-                keep_cycle = False
-                continue
+                return
             except KeyboardInterrupt:
                 print("exiting catsh")
                 keep_cycle = False
