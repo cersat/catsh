@@ -11,14 +11,20 @@ import threading
 import queue
 import time
 
+script_line = 0
 q = queue.Queue()
+stop_flag = threading.Event()
+flags     = {}
 variables = {}
 scr_args = sys.argv[1:]
-debug   = "--debug"   in scr_args
-fullerr = "--fullerr" in scr_args
-showver = "--ver"     in scr_args
+debug    = "--debug"    in scr_args
+fullerr  = "--fullerr"  in scr_args
+showver  = "--ver"      in scr_args
+portable = "--portable" in scr_args
 osname = os.name
-if osname == 'nt':
+if portable:
+    catsh_dir = os.path.dirname(os.path.abspath(script_path))
+elif osname == 'nt':
     appdata = os.environ.get("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
     catsh_dir = os.path.join(appdata, "Catsh")
 else:
@@ -33,7 +39,7 @@ except ValueError:
 keep_cycle  = True
 script_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.11"
+catver = "Catsh V0.12"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -52,7 +58,10 @@ def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, use_e, count=0):
     for item in folder.iterdir():
         if (item.is_file() and use_f) or (item.is_dir() and use_d) or (item.is_symlink() and use_z):
             if use_s in item.name:
-                print(item.name)
+                if use_r:
+                    print(folder + '\\' + item.name)
+                else:
+                    print(item.name)
                 count += 1
                 
         if use_r and item.is_dir():
@@ -71,6 +80,7 @@ def print_dir(folder, use_a, use_d, use_f, use_z, use_s, use_r, use_e, count=0):
 def update_constants():
     now = datetime.now()
     variables["cwd"]    = current_dir
+    variables["catsh"]  = catsh_dir
     variables["year"]   = now.strftime("%Y")
     variables["month"]  = now.strftime("%m")
     variables["day"]    = now.strftime("%d")
@@ -81,6 +91,7 @@ def update_constants():
     
 def parse_vars(line):
     global variables
+    global keep_cycle
     update_constants()
     out_line = ''
     var_line = ''
@@ -148,23 +159,33 @@ def input_thread(nickname):
         try:
             line = input(nickname + ':')
             q.put(line)
+            if stop_flag.is_set() or line == "EXIT":
+                stop_flag.set()
+                break
         except Exception:
             q.put('EXIT')
+            stop_flag.set()
             break
         
 def net_thread(room, nickname):
     own_prefix = nickname + ": "
     response = urllib.request.urlopen(f"https://ntfy.sh/{room}/json")
     for line in response:
+        if stop_flag.is_set():
+            break
         if not line.strip():
             continue
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if stop_flag.is_set():
+            break
         if event.get("event") != "message":
             continue
         message = event.get("message", "")
+        if stop_flag.is_set():
+            break
         if message == "__ping__":
             urllib.request.urlopen("https://ntfy.sh/" + room, data=b"__pong__")
         elif message == "__pong__":
@@ -180,7 +201,6 @@ def cmd_ver(args):
     print(catver)
     
 def cmd_quit(args):
-    print("exiting catsh")
     global keep_cycle
     keep_cycle = False
     
@@ -346,8 +366,10 @@ def cmd_run(args):
         else:
             errprint(2, "script for execution not received")
     else:
+        previous_script = script
         script = args[0]
         rscript()
+        script = previous_script
     
 def cmd_cmddef(args):
     help   = "/?" in args
@@ -383,10 +405,14 @@ def cmd_cmddef(args):
         else:
             errprint(2, "no such alias")
     else: #if len(args) > 1:
-        if args[1].startswith(args[0]):
+        if args[1].split()[0] == args[0]:
             errprint(2, "cannot create recursive command")
         else:
-            commands[args[0]] = args[1]
+            if not (args[1].split())[0] in commands:
+                errprint(1, "no such command:", args[1])
+            if args[0] in commands:
+                errprint(1, "redeclaration:", args[0], "already exists")
+            commands[args[0].lower()] = args[1]
             save_aliases()
         
 def cmd_help(args):
@@ -444,6 +470,7 @@ def cmd_touch(args):
         presolve(file).touch()
         
 def cmd_bridge(args):
+    stop_flag.clear()
     if len(args) < 2:
         print("NetBridge V1.01")
         print("Usage: bridge <room id> <nickname>")
@@ -478,6 +505,26 @@ def cmd_bridge(args):
                 urllib.request.urlopen("https://ntfy.sh/" + room, data=(nickname + ": " + line).encode())
         except queue.Empty:
             pass
+    stop_flag.set()
+    
+def cmd_pause(args):
+    input(args[0] if args else "press enter to continue")
+    
+def cmd_flag(args):
+    if not script or not args:
+        print("Scripts only")
+        print("Usage: flag <flag>")
+        return
+    flags[args[0]] = script_line
+   
+def cmd_goto(args):
+    global script_line
+    if not script or not args:
+        print("Scripts only")
+        print("Usage: goto <flag>")
+        return
+    script_line = flags[args[0]]
+    
 
 # commands end
 
@@ -502,29 +549,54 @@ commands = {
     "env"   : cmd_env,
     "touch" : cmd_touch,
     "bridge": cmd_bridge,
+    "pause" : cmd_pause,
+    "flag"  : cmd_flag, # scripts only
+    "goto"  : cmd_goto, # scripts only
 }
 
 # R.I.P "nothing\" folder
 def runcmd(cmd):
     global keep_cycle
-    cmd_args = split_args(cmd)
+    if fullerr:
+        cmd_args = split_args(cmd)
+    else:
+        try:
+            cmd_args = split_args(cmd)
+        except BaseException:
+            return
     if not cmd_args:
         return
     args = cmd_args[1:]
-    command = cmd_args[0]
+    command = cmd_args[0].lower()
     if fullerr:
         action = commands[command]
         if callable(action):
             action(args)
         elif isinstance(action, str):
-            runcmd(action + " " + " ".join(args))
+            full_args = ''
+            for i, arg in enumerate(args):
+                full_args += ' ' + arg
+                variables[str(i)] = arg
+            variables['*'] = full_args
+            runcmd(action)
+            del variables['*']
+            for i, arg in enumerate(args):
+                del variables[str(i)]
     else:
         try:
             action = commands[command]
             if callable(action):
                 action(args)
             elif isinstance(action, str):
-                runcmd(action + " " + " ".join(args))
+                full_args = ''
+                for i, arg in enumerate(args):
+                    full_args += ' ' + arg
+                    variables[str(i)] = arg
+                variables['*'] = full_args
+                runcmd(action)
+                del variables['*']
+                for i, arg in enumerate(args):
+                    del variables[str(i)]
         except KeyError:
             errprint(3, "invalid command:", command)
         except RecursionError:
@@ -537,19 +609,23 @@ def runcmd(cmd):
             errprint(3, "unknown error of", type(e).__name__ + ':', str(e))
 
 def rscript():
+    global script_line
+    script_running = True
     dbgprint("Running", script)
     script_lines = []
     if script:
         with open(script, encoding="utf-8") as f:
             script_lines = f.read().splitlines()
-    i = 0
-    while keep_cycle:
+    script_line = 0
+    while keep_cycle and script_running:
         try:
-            cmd = script_lines[i]
+            cmd = script_lines[script_line]
         except IndexError:
-            return
-        i = i + 1
+            script_running = False
+            continue
+        script_line = script_line + 1
         runcmd(cmd)
+    print("exiting", script)
 
 def main():
     global keep_cycle
@@ -571,13 +647,12 @@ def main():
             try:
                 cmd = input(parse_vars(variables["prompt"]))
             except EOFError:
-                print("exiting catsh")
                 return
             except KeyboardInterrupt:
-                print("exiting catsh")
                 keep_cycle = False
                 continue
         runcmd(cmd)
+    print("exiting catsh")
 
 if __name__ == "__main__":
     main()
