@@ -40,7 +40,7 @@ except ValueError:
     script  = False
 keep_cycle  = True
 
-catver = "Catsh V0.14"
+catver = "Catsh V0.15"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -533,6 +533,31 @@ def cmd_thread(args):
         return
     for arg in args:
         threading.Thread(target=runcmd, args=(arg,), daemon=True).start()
+        
+def cmd_write(args):
+    if len(args) < 2:
+        print("Usage:")
+        print("write --interactive <file>")
+        print("write <file> <string> <string> <string>...")
+        return
+    
+    if args[0] == "--interactive":
+        prent = ''
+        file = presolve(args[1])
+        print("enter EXIT to exit")
+        file.touch(exist_ok=True)
+        prent = input(file.name + '>')
+        while prent != 'EXIT':
+            with open(file, "a", encoding="utf-8") as f:
+                f.write(prent + "\n")
+            prent = input(file.name + '>')
+        print("exiting write")
+    else:
+        file = presolve(args[0])
+        strings = args[1:]
+        for string in strings:
+            with open(file, "a", encoding="utf-8") as f:
+                f.write(string + "\n")
     
 
 # commands end
@@ -562,6 +587,7 @@ commands = {
     "goto"  : cmd_goto, # scripts only
     "sleep" : cmd_sleep,
     "thread": cmd_thread,
+    "write" : cmd_write,
 }
 
 # R.I.P "nothing\" folder
