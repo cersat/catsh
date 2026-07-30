@@ -40,7 +40,7 @@ except ValueError:
     script  = False
 keep_cycle  = True
 
-catver = "Catsh V0.13"
+catver = "Catsh V0.14"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -520,6 +520,19 @@ def cmd_goto(args):
     
     if len(args) < 3 or args[1] == args[2]:
         script_line = flags[args[0]]
+        
+def cmd_sleep(args):
+    if not args:
+        print("Usage: sleep <seconds>")
+        return
+    time.sleep(int(args[0]))
+    
+def cmd_thread(args):
+    if not args:
+        print("Usage: thread <command> <command> <command>...")
+        return
+    for arg in args:
+        threading.Thread(target=runcmd, args=(arg,), daemon=True).start()
     
 
 # commands end
@@ -547,6 +560,8 @@ commands = {
     "bridge": cmd_bridge,
     "pause" : cmd_pause,
     "goto"  : cmd_goto, # scripts only
+    "sleep" : cmd_sleep,
+    "thread": cmd_thread,
 }
 
 # R.I.P "nothing\" folder
