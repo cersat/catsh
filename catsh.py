@@ -21,6 +21,8 @@ debug    = "--debug"    in scr_args
 fullerr  = "--fullerr"  in scr_args
 showver  = "--ver"      in scr_args
 portable = "--portable" in scr_args
+script_path = os.path.abspath(__file__)
+current_dir = os.path.dirname(os.path.abspath(script_path))
 osname = os.name
 if portable:
     catsh_dir = os.path.dirname(os.path.abspath(script_path))
@@ -37,9 +39,8 @@ try:
 except ValueError:
     script  = False
 keep_cycle  = True
-script_path = os.path.abspath(__file__)
-current_dir = os.path.dirname(os.path.abspath(script_path))
-catver = "Catsh V0.12"
+
+catver = "Catsh V0.13"
 def dbgprint(*args):
     if debug:
         print("[DEBUG]", *args)
@@ -509,13 +510,6 @@ def cmd_bridge(args):
     
 def cmd_pause(args):
     input(args[0] if args else "press enter to continue")
-    
-def cmd_flag(args):
-    if not script or not args:
-        print("Scripts only")
-        print("Usage: flag <flag>")
-        return
-    flags[args[0]] = script_line
    
 def cmd_goto(args):
     global script_line
@@ -523,7 +517,9 @@ def cmd_goto(args):
         print("Scripts only")
         print("Usage: goto <flag>")
         return
-    script_line = flags[args[0]]
+    
+    if len(args) < 3 or args[1] == args[2]:
+        script_line = flags[args[0]]
     
 
 # commands end
@@ -550,13 +546,14 @@ commands = {
     "touch" : cmd_touch,
     "bridge": cmd_bridge,
     "pause" : cmd_pause,
-    "flag"  : cmd_flag, # scripts only
     "goto"  : cmd_goto, # scripts only
 }
 
 # R.I.P "nothing\" folder
 def runcmd(cmd):
     global keep_cycle
+    if cmd.startswith(":"):
+        return
     if fullerr:
         cmd_args = split_args(cmd)
     else:
@@ -617,6 +614,15 @@ def rscript():
         with open(script, encoding="utf-8") as f:
             script_lines = f.read().splitlines()
     script_line = 0
+    while True:
+        try:
+            cmd = script_lines[script_line]
+        except IndexError:
+            break
+        script_line = script_line + 1
+        if cmd.startswith(":"):
+            flags[cmd[1:]] = script_line
+    script_line = 0
     while keep_cycle and script_running:
         try:
             cmd = script_lines[script_line]
@@ -625,17 +631,25 @@ def rscript():
             continue
         script_line = script_line + 1
         runcmd(cmd)
-    print("exiting", script)
+    if not "startup.csh" in script:
+        print("exiting", script)
 
 def main():
     global keep_cycle
     global variables
+    global script
+    #global *
     variables["prompt"] = "%cwd%>"
     if showver:
         print(catver, end='')
         return
     load_aliases()
     dbgprint("Debug prints are turned on")
+    if (Path(catsh_dir) / "startup.csh").is_file():
+        previous_script = script
+        script = str(Path(catsh_dir) / "startup.csh")
+        rscript()
+        script = previous_script
     print(catver)
     if script:
         rscript()
